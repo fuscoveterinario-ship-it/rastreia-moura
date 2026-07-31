@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Rastreia Moura</title><link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/><style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:#100D0B;font-family:system-ui,sans-serif}#root{min-height:100vh}</style></head><body><div id="root"></div><script>/**
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Rastreia Moura</title><link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/><style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:#100D0B;font-family:system-ui,sans-serif}#root{min-height:100vh}</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.min.js"></script></head><body><div id="root"></div><script>/**
  * @license React
  * react.production.min.js
  *
@@ -2923,9 +2923,24 @@ function Bar({
 }
 
 // ============================================================
+// AUTENTICAÇÃO REAL — SUPABASE RASTREIA MOURA
+// A chave abaixo é pública e foi criada para uso no navegador. A chave
+// administrativa nunca é enviada ao site.
+const SUPABASE_URL = "https://vmzmthtsxiwwjtpupclv.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_haUPRxXYuiSrLZvc1YetBw_6vBzDc9M";
+const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+  }
+});
+
+// ============================================================
 function RastreiaMoura() {
   const [logged, setLogged] = React.useState(false);
   const [perfil, setPerfil] = React.useState("estabelecimento");
+  const [usuario, setUsuario] = React.useState(null);
   const [tab, setTab] = React.useState("inicio");
   const [carcacas] = React.useState(seedCarcacas);
   const [fichas] = React.useState(seedFichas);
@@ -2942,13 +2957,20 @@ function RastreiaMoura() {
     };
   }, [carcacas]);
   if (!logged) return /*#__PURE__*/React.createElement(Login, {
-    onEnter: p => {
+    onEnter: (p, u) => {
       setPerfil(p);
+      setUsuario(u);
       setLogged(true);
     }
   });
   if (perfil === "administrador") return /*#__PURE__*/React.createElement(AdminApp, {
-    onSair: () => setLogged(false)
+    onSair: async () => {
+      await supabaseClient?.auth.signOut({
+        scope: "local"
+      });
+      setUsuario(null);
+      setLogged(false);
+    }
   });
   const tabs = [["inicio", "Início"], ["carcacas", "Carcaças"], ["estoque", "Estoque"], ["fichas", "Fichas técnicas"], ["producao", "Produção"], ["auditoria", "Auditoria"], ["relatorio", "Relatório mensal"]];
   return /*#__PURE__*/React.createElement("div", {
@@ -3002,7 +3024,7 @@ function RastreiaMoura() {
       letterSpacing: 0.5,
       textTransform: "uppercase"
     }
-  }, "Charcutaria Serra Azul · Estabelecimento"))), /*#__PURE__*/React.createElement("div", {
+  }, (usuario?.nome || "Usuário de teste") + " · " + (perfil === "auditor" ? "Auditor" : "Estabelecimento")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -3026,7 +3048,13 @@ function RastreiaMoura() {
       display: "inline-block"
     }
   }), "OFFLINE · sincroniza no wi-fi"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setLogged(false),
+    onClick: async () => {
+      await supabaseClient?.auth.signOut({
+        scope: "local"
+      });
+      setUsuario(null);
+      setLogged(false);
+    },
     style: {
       background: "none",
       border: `1px solid ${C.line}`,
@@ -3114,7 +3142,72 @@ function Login({
   onEnter
 }) {
   const [perfil, setPerfil] = React.useState("estabelecimento");
+  const [email, setEmail] = React.useState("");
+  const [senha, setSenha] = React.useState("");
+  const [erro, setErro] = React.useState("");
+  const [carregando, setCarregando] = React.useState(false);
   const perfis = [["estabelecimento", "Estabelecimento"], ["auditor", "Auditor"], ["administrador", "Administrador"]];
+  const nomesPerfil = {
+    estabelecimento: "Estabelecimento",
+    auditor: "Auditor",
+    administrador: "Administrador"
+  };
+  async function entrar(evento) {
+    evento?.preventDefault();
+    setErro("");
+    if (!supabaseClient) {
+      setErro("Não foi possível carregar o acesso seguro. Recarregue a página.");
+      return;
+    }
+    if (!email.trim() || !senha) {
+      setErro("Digite o e-mail e a senha.");
+      return;
+    }
+    setCarregando(true);
+    try {
+      const {
+        data,
+        error
+      } = await supabaseClient.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password: senha
+      });
+      if (error || !data.user) {
+        setErro("E-mail ou senha inválidos.");
+        return;
+      }
+      const {
+        data: cadastro,
+        error: perfilErro
+      } = await supabaseClient.from("usuario").select("id,nome,email,perfil,estabelecimento_id,ativo").eq("id", data.user.id).maybeSingle();
+      if (perfilErro || !cadastro) {
+        await supabaseClient.auth.signOut({
+          scope: "local"
+        });
+        setErro("Este usuário não possui perfil cadastrado no sistema.");
+        return;
+      }
+      if (!cadastro.ativo) {
+        await supabaseClient.auth.signOut({
+          scope: "local"
+        });
+        setErro("Este usuário está inativo. Procure o administrador.");
+        return;
+      }
+      if (cadastro.perfil !== perfil) {
+        await supabaseClient.auth.signOut({
+          scope: "local"
+        });
+        setErro(`Este login pertence ao perfil ${nomesPerfil[cadastro.perfil] || cadastro.perfil}. Selecione a categoria correta.`);
+        return;
+      }
+      onEnter(cadastro.perfil, cadastro);
+    } catch (e) {
+      setErro("Não foi possível entrar agora. Verifique a conexão e tente novamente.");
+    } finally {
+      setCarregando(false);
+    }
+  }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: sans,
@@ -3132,6 +3225,8 @@ function Login({
       width: "100%",
       maxWidth: 380
     }
+  }, /*#__PURE__*/React.createElement("form", {
+    onSubmit: entrar
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
@@ -3189,7 +3284,11 @@ function Login({
     }
   }, perfis.map(([k, lbl]) => /*#__PURE__*/React.createElement("button", {
     key: k,
-    onClick: () => setPerfil(k),
+    type: "button",
+    onClick: () => {
+      setPerfil(k);
+      setErro("");
+    },
     style: {
       flex: 1,
       padding: "9px 4px",
@@ -3203,14 +3302,23 @@ function Login({
       cursor: "pointer"
     }
   }, lbl)))), /*#__PURE__*/React.createElement(Field, {
-    label: "Usuário, CPF ou e-mail",
-    placeholder: perfil === "administrador" ? "ana@biotec.com.br" : "joao@charcutaria.com.br"
+    label: "E-mail de acesso",
+    placeholder: "usuario@teste.com",
+    value: email,
+    onChange: e => setEmail(e.target.value),
+    autoComplete: "username",
+    disabled: carregando
   }), /*#__PURE__*/React.createElement(Field, {
     label: "Senha",
     placeholder: "••••••••",
-    type: "password"
+    type: "password",
+    value: senha,
+    onChange: e => setSenha(e.target.value),
+    autoComplete: "current-password",
+    disabled: carregando
   }), /*#__PURE__*/React.createElement("button", {
-    onClick: () => onEnter(perfil),
+    type: "submit",
+    disabled: carregando,
     style: {
       width: "100%",
       background: C.cure,
@@ -3222,10 +3330,20 @@ function Login({
       fontWeight: 700,
       fontSize: 14,
       letterSpacing: 0.5,
-      cursor: "pointer",
+      cursor: carregando ? "wait" : "pointer",
+      opacity: carregando ? 0.65 : 1,
       marginTop: 8
     }
-  }, "ENTRAR"), /*#__PURE__*/React.createElement("div", {
+  }, carregando ? "VERIFICANDO..." : "ENTRAR"), erro && /*#__PURE__*/React.createElement("div", {
+    role: "alert",
+    style: {
+      marginTop: 12,
+      color: "#B84A3A",
+      fontSize: 12.5,
+      lineHeight: 1.45,
+      textAlign: "center"
+    }
+  }, erro), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       marginTop: 14
@@ -3238,7 +3356,7 @@ function Login({
       textDecoration: "none",
       cursor: "pointer"
     }
-  }, "Esqueci minha senha"))), /*#__PURE__*/React.createElement("div", {
+  }, "Esqueci minha senha")))), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       marginTop: 18,
@@ -3251,7 +3369,11 @@ function Login({
 function Field({
   label,
   placeholder,
-  type = "text"
+  type = "text",
+  value,
+  onChange,
+  autoComplete,
+  disabled = false
 }) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3270,6 +3392,10 @@ function Field({
   }, label), /*#__PURE__*/React.createElement("input", {
     type: type,
     placeholder: placeholder,
+    value: value,
+    onChange: onChange,
+    autoComplete: autoComplete,
+    disabled: disabled,
     style: {
       width: "100%",
       boxSizing: "border-box",
@@ -3280,7 +3406,8 @@ function Field({
       fontSize: 14,
       background: "#0F0C09",
       color: C.ink,
-      outline: "none"
+      outline: "none",
+      opacity: disabled ? 0.7 : 1
     }
   }));
 }

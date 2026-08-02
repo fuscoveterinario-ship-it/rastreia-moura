@@ -70,6 +70,10 @@
   .tag{font-family:'DM Mono',monospace;font-size:10.5px;padding:4px 11px;border-radius:3px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
   .tag.ativa{background:var(--moss);color:var(--ink)}
   .tag.suspensa{background:var(--cure);color:#0A0806}
+  .tag.processo{background:#5A4A2A;color:var(--cureSoft)}
+  .status-sel{background:#0F0C09;border:1px solid var(--line);border-radius:5px;color:var(--ink);font-family:'DM Mono',monospace;font-size:12px;padding:7px 10px;outline:none;cursor:pointer}
+  .status-sel:focus{border-color:var(--cure)}
+  .chancela-acoes{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
   .selo-wrap{position:relative;width:60px;flex-shrink:0}
   .selo-wrap img{width:100%;display:block}
   .selo-num{position:absolute;left:49.5%;top:85%;transform:translate(-50%,-50%);font-family:'Playfair Display',serif;font-weight:800;color:#2E1C0C;font-size:12px}
@@ -300,28 +304,109 @@ async function salvarEstab(){
 }
 
 async function telaChancelas(main){
-  let q = sb.from("chancela").select("numero,codigo,status,auditado_em,validade,estabelecimento_id,estabelecimento(nome,cidade)").order("numero");
+  let q = sb.from("chancela").select("id,numero,codigo,status,auditado_em,validade,estabelecimento_id,estabelecimento(nome,cidade)").order("numero");
   if (perfil==="estabelecimento" && meuEstab) q = q.eq("estabelecimento_id", meuEstab);
   const { data, error } = await q;
   if (error){ main.innerHTML = '<div class="loading">Erro: '+error.message+'</div>'; return; }
-  let html = '<div class="eyebrow">Certificação · rastreabilidade</div><h2>'+(perfil==="estabelecimento"?"Minha chancela":"Chancelas")+'</h2>';
+  const podeGerir = (perfil==="administrador");
+  let html = '<div class="topbar"><div><div class="eyebrow">Certificação · rastreabilidade</div><h2 style="margin-bottom:0">'+(perfil==="estabelecimento"?"Minha chancela":"Chancelas")+'</h2></div>';
+  if (podeGerir) html += '<button class="btn-novo" onclick="telaEmitirChancela()">+ Emitir chancela</button>';
+  html += '</div><div style="height:22px"></div>';
   if (!data.length) html += '<div class="vazio">Nenhuma chancela emitida ainda.</div>';
   data.forEach(c=>{
-    const ativa = c.status==="ativa";
-    html += '<div class="item '+(ativa?"moss":"gold")+'">'+
+    const st = statusInfo(c.status);
+    html += '<div class="item '+st.borda+'">'+
       '<div style="display:flex;align-items:center;gap:16px">'+
         '<div class="selo-wrap"><img src="'+SELO+'"/><div class="selo-num">'+c.numero+'</div></div>'+
         '<div><div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">'+
           '<span class="mono" style="font-size:14px;color:var(--cure)">'+esc(c.codigo)+'</span>'+
-          '<span class="tag '+(ativa?"ativa":"suspensa")+'">'+(ativa?"Ativa":"Suspensa")+'</span></div>'+
+          '<span class="tag '+st.classe+'">'+st.rotulo+'</span></div>'+
           '<div class="nome" style="font-size:15px">'+esc(c.estabelecimento?c.estabelecimento.nome:"")+'</div>'+
           '<div class="meta">Auditado '+esc(fmt(c.auditado_em))+'  ·  validade '+esc(fmt(c.validade))+'</div>'+
         '</div>'+
       '</div>'+
-      '<a class="btn-ver" href="'+SUPA_URL+'/functions/v1/verifica?c='+encodeURIComponent(c.codigo)+'" target="_blank">Ver QR →</a>'+
+      '<div class="chancela-acoes">';
+    if (podeGerir){
+      html += '<select class="status-sel" onchange="mudarStatus(\''+c.id+'\',this.value,this)">'+
+        '<option value="ativa"'+(c.status==="ativa"?" selected":"")+'>Ativa</option>'+
+        '<option value="em_processo"'+(c.status==="em_processo"?" selected":"")+'>Em processo</option>'+
+        '<option value="suspensa"'+(c.status==="suspensa"?" selected":"")+'>Suspensa</option>'+
+      '</select>';
+    }
+    html += '<a class="btn-ver" href="'+SUPA_URL+'/functions/v1/verifica?c='+encodeURIComponent(c.codigo)+'" target="_blank">Ver QR →</a>'+
+      '</div>'+
     '</div>';
   });
   main.innerHTML = html;
+}
+
+function statusInfo(s){
+  if (s==="ativa") return {classe:"ativa", rotulo:"Ativa", borda:"moss"};
+  if (s==="em_processo") return {classe:"processo", rotulo:"Em processo", borda:"gold"};
+  return {classe:"suspensa", rotulo:"Suspensa", borda:"gold"};
+}
+
+async function mudarStatus(id, novo, sel){
+  sel.disabled = true;
+  const { error } = await sb.from("chancela").update({ status: novo }).eq("id", id);
+  sel.disabled = false;
+  if (error){ alert("Erro ao mudar status: "+error.message); return; }
+  // recarrega a lista para refletir cor/rótulo
+  abrir("chancelas");
+}
+
+async function telaEmitirChancela(){
+  const main = document.getElementById("main");
+  main.innerHTML = '<div class="loading">Carregando estabelecimentos…</div>';
+  // estabelecimentos que ainda não têm chancela
+  const [est, cha] = await Promise.all([
+    sb.from("estabelecimento").select("id,nome,cidade").order("nome"),
+    sb.from("chancela").select("estabelecimento_id")
+  ]);
+  const comChancela = new Set((cha.data||[]).map(c=>c.estabelecimento_id));
+  const disponiveis = (est.data||[]).filter(e=>!comChancela.has(e.id));
+  let html = '<button class="btn-link" onclick="abrir(\'chancelas\')">← Voltar às chancelas</button>'+
+    '<div class="eyebrow">Nova certificação</div><h2>Emitir chancela</h2>';
+  if (!disponiveis.length){
+    html += '<div class="vazio">Todos os estabelecimentos já possuem chancela.</div>';
+    main.innerHTML = html; return;
+  }
+  html += '<div class="form-card">'+
+    '<label>Estabelecimento</label><select class="status-sel" id="ec_estab" style="width:100%;padding:12px 14px;font-size:14px">'+
+    disponiveis.map(e=>'<option value="'+e.id+'">'+esc(e.nome)+(e.cidade?' — '+esc(e.cidade):'')+'</option>').join("")+
+    '</select>'+
+    '<label>Data da auditoria</label><input id="ec_auditado" type="date"/>'+
+    '<label>Validade</label><input id="ec_validade" type="date"/>'+
+    '<label>Status inicial</label><select class="status-sel" id="ec_status" style="width:100%;padding:12px 14px;font-size:14px">'+
+      '<option value="em_processo">Em processo</option>'+
+      '<option value="ativa">Ativa</option>'+
+      '<option value="suspensa">Suspensa</option>'+
+    '</select>'+
+    '<button class="btn-salvar" id="btnEmitir" onclick="emitirChancela()">EMITIR CHANCELA</button>'+
+    '<div id="ecMsg"></div>'+
+  '</div>';
+  main.innerHTML = html;
+}
+
+async function emitirChancela(){
+  const estab = document.getElementById("ec_estab").value;
+  const auditado = document.getElementById("ec_auditado").value || null;
+  const validade = document.getElementById("ec_validade").value || null;
+  const status = document.getElementById("ec_status").value;
+  const msg = document.getElementById("ecMsg");
+  const btn = document.getElementById("btnEmitir");
+  msg.className=""; msg.textContent="";
+  btn.disabled=true; btn.textContent="EMITINDO…";
+  // codigo temporário; o trigger no banco gera o número e o código definitivo
+  const ano = new Date().getFullYear();
+  const { data, error } = await sb.from("chancela")
+    .insert({ estabelecimento_id: estab, status: status, auditado_em: auditado, validade: validade, codigo: 'RM-'+ano+'-TEMP', numero: 0 })
+    .select("codigo,numero").single();
+  btn.disabled=false; btn.textContent="EMITIR CHANCELA";
+  if (error){ msg.className="msg-erro"; msg.textContent="Erro: "+error.message; return; }
+  msg.className="msg-ok";
+  msg.textContent = "✓ Chancela "+data.codigo+" emitida! Redirecionando…";
+  setTimeout(()=>abrir("chancelas"), 1300);
 }
 
 function esc(s){ return String(s==null?"":s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }

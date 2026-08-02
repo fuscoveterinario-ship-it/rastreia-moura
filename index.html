@@ -109,6 +109,16 @@
   .acesso-titulo{font-family:'DM Mono',monospace;font-size:12px;color:var(--cure);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
   .acesso-titulo span{color:var(--inkSoft);text-transform:none;letter-spacing:0}
   .acesso-desc{font-size:12px;color:var(--inkSoft);line-height:1.5;margin-bottom:8px}
+  .metric.moss .v{color:var(--mossSoft)}
+  .metric.cure .v{color:var(--cure)}
+  .metric .v small{font-size:14px;color:var(--inkSoft);font-weight:400}
+  .painel-card{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:18px}
+  .painel-titulo{font-family:'DM Mono',monospace;font-size:11px;color:var(--cure);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+  .linha-mini{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dotted var(--line)}
+  .linha-mini:last-child{border-bottom:none}
+  .carc-linha{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dotted var(--line)}
+  .carc-linha:last-child{border-bottom:none}
+  @media(max-width:640px){.grid-resumo{grid-template-columns:1fr !important}}
 </style></head>
 <body>
 
@@ -241,7 +251,7 @@ function montarNav(){
   let abas;
   if (perfil === "administrador") abas = [["inicio","Início"],["estabelecimentos","Estabelecimentos"],["chancelas","Chancelas"]];
   else if (perfil === "auditor") abas = [["inicio","Início"],["estabelecimentos","Estabelecimentos"],["chancelas","Chancelas"]];
-  else abas = [["inicio","Início"],["chancelas","Minha chancela"]];
+  else abas = [["inicio","Início"],["carcacas","Carcaças"],["estoque","Estoque"],["fichas","Fichas técnicas"],["producao","Produção"],["chancela","Minha chancela"]];
   const nav = document.getElementById("nav");
   nav.innerHTML = abas.map(a=>'<button data-k="'+a[0]+'">'+a[1]+'</button>').join("");
   nav.querySelectorAll("button").forEach(b=> b.onclick = ()=>abrir(b.dataset.k));
@@ -255,10 +265,15 @@ async function abrir(tela){
   main.innerHTML = '<div class="loading">Carregando…</div>';
   if (tela==="inicio") return telaInicio(main);
   if (tela==="estabelecimentos") return telaEstab(main);
-  if (tela==="chancelas") return telaChancelas(main);
+  if (tela==="chancelas" || tela==="chancela") return telaChancelas(main);
+  if (tela==="carcacas") return telaCarcacas(main);
+  if (tela==="estoque") return telaEstoque(main);
+  if (tela==="fichas") return telaFichas(main);
+  if (tela==="producao") return telaProducao(main);
 }
 
 async function telaInicio(main){
+  if (perfil==="estabelecimento" && meuEstab) return telaInicioEstab(main);
   const [est, cha, pro] = await Promise.all([
     sb.from("estabelecimento").select("id", {count:"exact", head:true}),
     sb.from("chancela").select("status"),
@@ -270,12 +285,59 @@ async function telaInicio(main){
   const suspensas = chas.filter(c=>c.status==="suspensa").length;
   const nPro = pro.count||0;
   let html = '<div class="eyebrow">Visão geral</div><h2>Início</h2><div class="metrics">';
-  if (perfil!=="estabelecimento") html += metric(nEst, "Estabelecimentos");
+  html += metric(nEst, "Estabelecimentos");
   html += metric(ativas, "Chancelas ativas") + metric(suspensas, "Suspensas") + metric(nPro, "Produtos certificados");
   html += '</div>';
   html += '<div class="eyebrow">Certificação</div><h2 style="font-size:20px">Como funciona</h2>';
   html += '<div class="item"><div><div class="nome">Chancela viva</div><div class="meta">O QR do rótulo consulta o banco toda vez. Suspendeu → o consumidor vê na hora.</div></div></div>';
   main.innerHTML = html;
+}
+
+async function telaInicioEstab(main){
+  const mes = new Date().toISOString().slice(0,7); // AAAA-MM
+  const [car, prods, docs] = await Promise.all([
+    sb.from("carcaca").select("peso_carcaca,saldo_kg,data_entrada,codigo,produtor,animal").eq("estabelecimento_id",meuEstab).order("data_entrada",{ascending:false}),
+    sb.from("producao").select("id,status,data_fabricacao,ficha_id,ficha_tecnica(produto)").eq("estabelecimento_id",meuEstab).order("data_fabricacao",{ascending:false}),
+    sb.from("documento_rt").select("id").eq("estabelecimento_id",meuEstab)
+  ]);
+  const carc = car.data||[];
+  const saldo = carc.reduce((s,c)=>s+Number(c.saldo_kg||0),0);
+  const recebidoMes = carc.filter(c=>String(c.data_entrada).slice(0,7)===mes).reduce((s,c)=>s+Number(c.peso_carcaca||0),0);
+  const utilizado = carc.reduce((s,c)=>s+(Number(c.peso_carcaca||0)-Number(c.saldo_kg||0)),0);
+  const producoes = prods.data||[];
+  const prodMes = producoes.filter(p=>String(p.data_fabricacao).slice(0,7)===mes).length;
+  let html = '<div class="eyebrow">Painel · '+mesNome(mes)+'</div><h2>Resumo do estabelecimento</h2>';
+  html += '<div class="metrics">'+
+    metricCor(saldo.toFixed(2)+' <small>kg</small>', "Saldo em estoque", "moss")+
+    metric(recebidoMes.toFixed(2)+' <small>kg</small>', "Recebido no mês")+
+    metricCor(utilizado.toFixed(2)+' <small>kg</small>', "Utilizado", "cure")+
+    metric(prodMes+' <small>docs</small>', "Produções do mês")+
+  '</div>';
+  // últimas carcaças e produções
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px" class="grid-resumo">';
+  html += '<div class="painel-card"><div class="painel-titulo">Últimas carcaças</div>';
+  if (!carc.length) html += '<div class="meta">Nenhuma carcaça registrada.</div>';
+  carc.slice(0,3).forEach(c=>{
+    html += '<div class="linha-mini"><div><div class="nome" style="font-size:14px">'+esc(c.codigo)+'</div><div class="meta">'+esc(c.produtor||"—")+(c.animal?' · animal '+esc(c.animal):'')+'</div></div><div class="mono" style="color:var(--cure)">'+Number(c.peso_carcaca).toFixed(1)+' kg</div></div>';
+  });
+  html += '</div>';
+  html += '<div class="painel-card"><div class="painel-titulo">Últimas produções</div>';
+  if (!producoes.length) html += '<div class="meta">Nenhuma produção registrada.</div>';
+  producoes.slice(0,3).forEach(p=>{
+    const st = statusProducao(p.status);
+    html += '<div class="linha-mini"><div><div class="nome" style="font-size:14px">'+esc(p.ficha_tecnica?p.ficha_tecnica.produto:"—")+'</div><div class="meta">'+fmt(p.data_fabricacao)+'</div></div><span class="tag '+st.classe+'">'+st.rotulo+'</span></div>';
+  });
+  html += '</div></div>';
+  main.innerHTML = html;
+}
+function mesNome(m){ const n=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]; const p=m.split("-"); return n[parseInt(p[1])-1]+" "+p[0]; }
+function metricCor(v,l,cor){ return '<div class="metric '+cor+'"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+function statusProducao(s){
+  if (s==="aprovado") return {classe:"ativa", rotulo:"Aprovado"};
+  if (s==="aguardando") return {classe:"processo", rotulo:"Aguardando auditoria"};
+  if (s==="em_correcao") return {classe:"suspensa", rotulo:"Em correção"};
+  if (s==="reprovado") return {classe:"suspensa", rotulo:"Reprovado"};
+  return {classe:"processo", rotulo:"Rascunho"};
 }
 function metric(v,l){ return '<div class="metric"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
 
@@ -460,6 +522,227 @@ async function emitirChancela(){
   msg.className="msg-ok";
   msg.textContent = "✓ Chancela "+data.codigo+" emitida! Redirecionando…";
   setTimeout(()=>abrir("chancelas"), 1300);
+}
+
+// ==================== CARCAÇAS (entrada) ====================
+async function telaCarcacas(main){
+  const { data, error } = await sb.from("carcaca").select("*").eq("estabelecimento_id",meuEstab).order("data_entrada",{ascending:false});
+  if (error){ main.innerHTML='<div class="loading">Erro: '+error.message+'</div>'; return; }
+  let html = '<div class="topbar"><div><div class="eyebrow">Recebimento · origem</div><h2 style="margin-bottom:0">Carcaças</h2></div>'+
+    '<button class="btn-novo" onclick="telaNovaCarcaca()">+ Nova carcaça</button></div><div style="height:22px"></div>';
+  if (!data.length) html += '<div class="vazio">Nenhuma carcaça recebida ainda.</div>';
+  data.forEach(c=>{
+    const usado = Number(c.peso_carcaca)-Number(c.saldo_kg);
+    html += '<div class="item"><div><div class="nome">'+esc(c.codigo)+'  ·  '+Number(c.peso_carcaca).toFixed(1)+' kg</div>'+
+      '<div class="meta">'+esc(c.produtor||"—")+(c.municipio?' · '+esc(c.municipio):'')+(c.animal?' · animal '+esc(c.animal):'')+' · entrada '+fmt(c.data_entrada)+
+      (c.gta?' · GTA '+esc(c.gta):'')+'</div></div>'+
+      '<div style="text-align:right"><div class="mono" style="color:var(--moss);font-size:15px">'+Number(c.saldo_kg).toFixed(1)+' kg</div><div class="meta" style="font-size:11px">disponível'+(usado>0?' · usou '+usado.toFixed(1):'')+'</div></div></div>';
+  });
+  main.innerHTML = html;
+}
+function telaNovaCarcaca(){
+  const main = document.getElementById("main");
+  main.innerHTML = '<button class="btn-link" onclick="abrir(\'carcacas\')">← Voltar às carcaças</button>'+
+    '<div class="eyebrow">Recebimento</div><h2>Nova carcaça</h2>'+
+    '<div class="form-card">'+
+      '<label>Peso da carcaça (kg) *</label><input id="c_peso" type="number" step="0.01" placeholder="42.50"/>'+
+      '<label>Produtor / origem</label><input id="c_produtor" placeholder="Sítio Boa Vista"/>'+
+      '<label>Município de origem</label><input id="c_municipio" placeholder="Palmeira/PR"/>'+
+      '<label>Identificação do animal</label><input id="c_animal" placeholder="005"/>'+
+      '<label>Raça</label><input id="c_raca" value="Moura"/>'+
+      '<label>Nº da GTA</label><input id="c_gta" placeholder="GTA 000000"/>'+
+      '<label>Abatedouro</label><input id="c_abatedouro" placeholder="Frigorífico ..."/>'+
+      '<label>Peso vivo (kg)</label><input id="c_pesovivo" type="number" step="0.01" placeholder="opcional"/>'+
+      '<label>Data de entrada</label><input id="c_data" type="date"/>'+
+      '<button class="btn-salvar" id="btnC" onclick="salvarCarcaca()">REGISTRAR CARCAÇA</button>'+
+      '<div id="cMsg"></div></div>';
+  document.getElementById("c_data").value = new Date().toISOString().slice(0,10);
+}
+async function salvarCarcaca(){
+  const peso = parseFloat(document.getElementById("c_peso").value);
+  const msg = document.getElementById("cMsg"); const btn=document.getElementById("btnC");
+  msg.className=""; msg.textContent="";
+  if (!peso || peso<=0){ msg.className="msg-erro"; msg.textContent="Informe um peso de carcaça válido."; return; }
+  btn.disabled=true; btn.textContent="SALVANDO…";
+  const ano = new Date().getFullYear(); const mm = String(new Date().getMonth()+1).padStart(2,"0");
+  const rec = {
+    estabelecimento_id: meuEstab,
+    codigo: 'CAR-'+ano+mm+'-TEMP',
+    peso_carcaca: peso,
+    saldo_kg: peso, // trigger init também garante
+    produtor: document.getElementById("c_produtor").value.trim()||null,
+    municipio: document.getElementById("c_municipio").value.trim()||null,
+    animal: document.getElementById("c_animal").value.trim()||null,
+    raca: document.getElementById("c_raca").value.trim()||"Moura",
+    gta: document.getElementById("c_gta").value.trim()||null,
+    abatedouro: document.getElementById("c_abatedouro").value.trim()||null,
+    peso_vivo: parseFloat(document.getElementById("c_pesovivo").value)||null,
+    data_entrada: document.getElementById("c_data").value||new Date().toISOString().slice(0,10)
+  };
+  const { error } = await sb.from("carcaca").insert(rec);
+  btn.disabled=false; btn.textContent="REGISTRAR CARCAÇA";
+  if (error){ msg.className="msg-erro"; msg.textContent="Erro: "+error.message; return; }
+  msg.className="msg-ok"; msg.textContent="✓ Carcaça registrada! Redirecionando…";
+  setTimeout(()=>abrir("carcacas"), 1200);
+}
+
+// ==================== ESTOQUE ====================
+async function telaEstoque(main){
+  const { data, error } = await sb.from("carcaca").select("*").eq("estabelecimento_id",meuEstab).gt("saldo_kg",0).order("data_entrada");
+  if (error){ main.innerHTML='<div class="loading">Erro: '+error.message+'</div>'; return; }
+  const total = (data||[]).reduce((s,c)=>s+Number(c.saldo_kg),0);
+  let html = '<div class="eyebrow">Disponível · kg</div><h2>Estoque de carcaças</h2>'+
+    '<div class="metrics"><div class="metric moss"><div class="v">'+total.toFixed(2)+' <small>kg</small></div><div class="l">Saldo total disponível</div></div>'+
+    '<div class="metric"><div class="v">'+(data||[]).length+'</div><div class="l">Carcaças com saldo</div></div></div>';
+  if (!data.length) html += '<div class="vazio">Sem saldo em estoque. Registre uma carcaça primeiro.</div>';
+  data.forEach(c=>{
+    const pct = (Number(c.saldo_kg)/Number(c.peso_carcaca)*100).toFixed(0);
+    html += '<div class="item moss"><div><div class="nome">'+esc(c.codigo)+'</div><div class="meta">'+esc(c.produtor||"—")+' · entrada '+fmt(c.data_entrada)+' · original '+Number(c.peso_carcaca).toFixed(1)+' kg</div></div>'+
+      '<div style="text-align:right"><div class="mono" style="color:var(--moss);font-size:16px">'+Number(c.saldo_kg).toFixed(1)+' kg</div><div class="meta" style="font-size:11px">'+pct+'% restante</div></div></div>';
+  });
+  main.innerHTML = html;
+}
+
+// ==================== FICHAS TÉCNICAS ====================
+async function telaFichas(main){
+  const { data, error } = await sb.from("ficha_tecnica").select("*").eq("estabelecimento_id",meuEstab).order("produto");
+  if (error){ main.innerHTML='<div class="loading">Erro: '+error.message+'</div>'; return; }
+  let html = '<div class="topbar"><div><div class="eyebrow">Receitas · produtos</div><h2 style="margin-bottom:0">Fichas técnicas</h2></div>'+
+    '<button class="btn-novo" onclick="telaNovaFicha()">+ Nova ficha</button></div><div style="height:22px"></div>';
+  if (!data.length) html += '<div class="vazio">Nenhuma ficha técnica cadastrada.</div>';
+  data.forEach(f=>{
+    html += '<div class="item"><div><div class="nome">'+esc(f.produto)+'</div><div class="meta">'+
+      (f.rendimento?'rendimento '+f.rendimento+'% · ':'')+(f.pct_carne?'carne '+f.pct_carne+'% · ':'')+(f.pct_gordura?'gordura '+f.pct_gordura+'% · ':'')+
+      (f.validade?'validade '+esc(f.validade):'')+'</div></div>'+
+      '<span class="tag '+(f.ativo?'ativa':'suspensa')+'">'+(f.ativo?'Ativa':'Inativa')+'</span></div>';
+  });
+  main.innerHTML = html;
+}
+function telaNovaFicha(){
+  const main = document.getElementById("main");
+  main.innerHTML = '<button class="btn-link" onclick="abrir(\'fichas\')">← Voltar às fichas</button>'+
+    '<div class="eyebrow">Nova receita</div><h2>Nova ficha técnica</h2>'+
+    '<div class="form-card">'+
+      '<label>Nome do produto *</label><input id="f_produto" placeholder="Salame Colonial Moura"/>'+
+      '<label>Unidade</label><input id="f_unidade" placeholder="kg / peça"/>'+
+      '<label>Validade</label><input id="f_validade" placeholder="90 dias"/>'+
+      '<label>Rendimento (%)</label><input id="f_rend" type="number" step="0.1" placeholder="70"/>'+
+      '<label>% Carne</label><input id="f_carne" type="number" step="0.1" placeholder="80"/>'+
+      '<label>% Gordura</label><input id="f_gord" type="number" step="0.1" placeholder="20"/>'+
+      '<label>% Outros</label><input id="f_outros" type="number" step="0.1" placeholder="0"/>'+
+      '<button class="btn-salvar" id="btnF" onclick="salvarFicha()">CADASTRAR FICHA</button>'+
+      '<div id="fMsg"></div></div>';
+}
+async function salvarFicha(){
+  const produto = document.getElementById("f_produto").value.trim();
+  const msg=document.getElementById("fMsg"); const btn=document.getElementById("btnF");
+  msg.className=""; msg.textContent="";
+  if (!produto){ msg.className="msg-erro"; msg.textContent="Informe o nome do produto."; return; }
+  btn.disabled=true; btn.textContent="SALVANDO…";
+  const rec = {
+    estabelecimento_id: meuEstab, produto,
+    unidade: document.getElementById("f_unidade").value.trim()||null,
+    validade: document.getElementById("f_validade").value.trim()||null,
+    rendimento: parseFloat(document.getElementById("f_rend").value)||null,
+    pct_carne: parseFloat(document.getElementById("f_carne").value)||null,
+    pct_gordura: parseFloat(document.getElementById("f_gord").value)||null,
+    pct_outros: parseFloat(document.getElementById("f_outros").value)||null,
+    ativo: true
+  };
+  const { error } = await sb.from("ficha_tecnica").insert(rec);
+  btn.disabled=false; btn.textContent="CADASTRAR FICHA";
+  if (error){ msg.className="msg-erro"; msg.textContent="Erro: "+error.message; return; }
+  msg.className="msg-ok"; msg.textContent="✓ Ficha cadastrada! Redirecionando…";
+  setTimeout(()=>abrir("fichas"), 1200);
+}
+
+// ==================== PRODUÇÃO ====================
+async function telaProducao(main){
+  const { data, error } = await sb.from("producao").select("*,ficha_tecnica(produto)").eq("estabelecimento_id",meuEstab).order("data_fabricacao",{ascending:false});
+  if (error){ main.innerHTML='<div class="loading">Erro: '+error.message+'</div>'; return; }
+  let html = '<div class="topbar"><div><div class="eyebrow">Fabricação · rastreabilidade</div><h2 style="margin-bottom:0">Produção</h2></div>'+
+    '<button class="btn-novo" onclick="telaNovaProducao()">+ Nova produção</button></div><div style="height:22px"></div>';
+  if (!data.length) html += '<div class="vazio">Nenhuma produção registrada ainda.</div>';
+  data.forEach(p=>{
+    const st = statusProducao(p.status);
+    html += '<div class="item"><div><div class="nome">'+esc(p.ficha_tecnica?p.ficha_tecnica.produto:"—")+(p.lote?'  ·  lote '+esc(p.lote):'')+'</div>'+
+      '<div class="meta">fabricado '+fmt(p.data_fabricacao)+(p.qtd_produzida?' · '+p.qtd_produzida+' un/kg':'')+'</div></div>'+
+      '<span class="tag '+st.classe+'">'+st.rotulo+'</span></div>';
+  });
+  main.innerHTML = html;
+}
+async function telaNovaProducao(){
+  const main = document.getElementById("main");
+  main.innerHTML = '<div class="loading">Carregando fichas e estoque…</div>';
+  const [fichas, carcacas] = await Promise.all([
+    sb.from("ficha_tecnica").select("id,produto").eq("estabelecimento_id",meuEstab).eq("ativo",true).order("produto"),
+    sb.from("carcaca").select("id,codigo,saldo_kg,produtor").eq("estabelecimento_id",meuEstab).gt("saldo_kg",0).order("data_entrada")
+  ]);
+  const fs = fichas.data||[]; const cs = carcacas.data||[];
+  if (!fs.length){ main.innerHTML='<button class="btn-link" onclick="abrir(\'producao\')">← Voltar</button><div class="vazio">Cadastre uma ficha técnica antes de produzir.</div>'; return; }
+  if (!cs.length){ main.innerHTML='<button class="btn-link" onclick="abrir(\'producao\')">← Voltar</button><div class="vazio">Sem carcaças em estoque. Registre uma carcaça antes de produzir.</div>'; return; }
+  let html = '<button class="btn-link" onclick="abrir(\'producao\')">← Voltar à produção</button>'+
+    '<div class="eyebrow">Nova fabricação</div><h2>Nova produção</h2>'+
+    '<div class="form-card">'+
+      '<label>Produto (ficha técnica) *</label><select class="status-sel" id="p_ficha" style="width:100%;padding:12px 14px;font-size:14px">'+
+      fs.map(f=>'<option value="'+f.id+'">'+esc(f.produto)+'</option>').join("")+'</select>'+
+      '<label>Lote</label><input id="p_lote" placeholder="L-'+new Date().getFullYear()+'-001"/>'+
+      '<label>Data de fabricação</label><input id="p_data" type="date"/>'+
+      '<label>Quantidade produzida (un/kg)</label><input id="p_qtd" type="number" step="0.01" placeholder="0"/>'+
+      '<div class="acesso-bloco"><div class="acesso-titulo">Carcaças utilizadas</div>'+
+      '<div class="acesso-desc">Marque as carcaças e informe quantos kg de cada uma foram usados nesta produção. O estoque baixa automaticamente.</div>'+
+      cs.map(c=>'<div class="carc-linha"><label style="display:flex;align-items:center;gap:8px;margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" class="p_carc" data-id="'+c.id+'" data-saldo="'+c.saldo_kg+'" style="width:auto" onchange="toggleCarc(this)"/> '+esc(c.codigo)+' <span class="meta">('+Number(c.saldo_kg).toFixed(1)+' kg disp.)</span></label>'+
+        '<input type="number" step="0.01" class="p_kg" data-id="'+c.id+'" placeholder="kg usados" disabled style="width:120px;padding:8px"/></div>').join("")+
+      '</div>'+
+      '<button class="btn-salvar" id="btnP" onclick="salvarProducao()">REGISTRAR PRODUÇÃO</button>'+
+      '<div id="pMsg"></div></div>';
+  main.innerHTML = html;
+  document.getElementById("p_data").value = new Date().toISOString().slice(0,10);
+}
+function toggleCarc(chk){
+  const kg = document.querySelector('.p_kg[data-id="'+chk.dataset.id+'"]');
+  kg.disabled = !chk.checked;
+  if (!chk.checked) kg.value="";
+  else kg.focus();
+}
+async function salvarProducao(){
+  const ficha = document.getElementById("p_ficha").value;
+  const msg=document.getElementById("pMsg"); const btn=document.getElementById("btnP");
+  msg.className=""; msg.textContent="";
+  // coletar carcaças marcadas
+  const usos = [];
+  document.querySelectorAll(".p_carc:checked").forEach(chk=>{
+    const kg = parseFloat(document.querySelector('.p_kg[data-id="'+chk.dataset.id+'"]').value);
+    const saldo = parseFloat(chk.dataset.saldo);
+    usos.push({ carcaca_id: chk.dataset.id, kg, saldo });
+  });
+  if (!usos.length){ msg.className="msg-erro"; msg.textContent="Selecione ao menos uma carcaça."; return; }
+  for (const u of usos){
+    if (!u.kg || u.kg<=0){ msg.className="msg-erro"; msg.textContent="Informe os kg usados de cada carcaça marcada."; return; }
+    if (u.kg > u.saldo){ msg.className="msg-erro"; msg.textContent="Uma carcaça não tem saldo suficiente ("+u.kg+" > "+u.saldo+" kg)."; return; }
+  }
+  btn.disabled=true; btn.textContent="SALVANDO…";
+  // 1) criar producao
+  const { data: prod, error: e1 } = await sb.from("producao").insert({
+    estabelecimento_id: meuEstab, ficha_id: ficha,
+    lote: document.getElementById("p_lote").value.trim()||null,
+    data_fabricacao: document.getElementById("p_data").value||new Date().toISOString().slice(0,10),
+    qtd_produzida: parseFloat(document.getElementById("p_qtd").value)||null,
+    status: "aguardando"
+  }).select("id").single();
+  if (e1){ btn.disabled=false; btn.textContent="REGISTRAR PRODUÇÃO"; msg.className="msg-erro"; msg.textContent="Erro: "+e1.message; return; }
+  // 2) inserir consumos (trigger baixa o saldo)
+  const consumos = usos.map(u=>({ producao_id: prod.id, carcaca_id: u.carcaca_id, kg_utilizado: u.kg }));
+  const { error: e2 } = await sb.from("consumo_carcaca").insert(consumos);
+  if (e2){
+    await sb.from("producao").delete().eq("id", prod.id); // desfaz
+    btn.disabled=false; btn.textContent="REGISTRAR PRODUÇÃO";
+    msg.className="msg-erro"; msg.textContent = /saldo/i.test(e2.message)?"Saldo insuficiente em uma carcaça.":"Erro ao baixar estoque: "+e2.message;
+    return;
+  }
+  btn.disabled=false; btn.textContent="REGISTRAR PRODUÇÃO";
+  msg.className="msg-ok"; msg.textContent="✓ Produção registrada e estoque baixado! Redirecionando…";
+  setTimeout(()=>abrir("producao"), 1400);
 }
 
 function verQR(codigo, nomeEstab){

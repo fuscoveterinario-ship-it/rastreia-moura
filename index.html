@@ -105,6 +105,10 @@
   .btn-salvar:disabled{opacity:.5}
   .msg-ok{color:var(--mossSoft);font-family:'DM Mono',monospace;font-size:13px;margin-top:14px;text-align:center}
   .msg-erro{color:#E0876B;font-family:'DM Mono',monospace;font-size:13px;margin-top:14px;text-align:center}
+  .acesso-bloco{margin-top:22px;padding-top:20px;border-top:1px dashed var(--line)}
+  .acesso-titulo{font-family:'DM Mono',monospace;font-size:12px;color:var(--cure);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+  .acesso-titulo span{color:var(--inkSoft);text-transform:none;letter-spacing:0}
+  .acesso-desc{font-size:12px;color:var(--inkSoft);line-height:1.5;margin-bottom:8px}
 </style></head>
 <body>
 
@@ -285,7 +289,7 @@ async function telaEstab(main){
   if (!data.length) html += '<div class="vazio">Nenhum estabelecimento cadastrado ainda.</div>';
   data.forEach(e=>{
     html += '<div class="item"><div><div class="nome">'+esc(e.nome)+'</div>'+
-      '<div class="meta">CNPJ '+esc(e.cnpj||"—")+'  ·  '+esc(e.cidade||"—")+'  ·  '+esc(e.sim_poa||"—")+'</div></div></div>';
+      '<div class="meta">'+esc(e.documento||"—")+'  ·  '+esc(e.cidade||"—")+'  ·  '+esc(e.sim_poa||"—")+(e.email?'  ·  '+esc(e.email):'')+'</div></div></div>';
   });
   main.innerHTML = html;
 }
@@ -296,10 +300,17 @@ function telaNovoEstab(){
     '<button class="btn-link" onclick="abrir(\'estabelecimentos\')">← Voltar aos estabelecimentos</button>'+
     '<div class="eyebrow">Novo cliente</div><h2>Cadastrar estabelecimento</h2>'+
     '<div class="form-card">'+
-      '<label>Razão social / Nome</label><input id="f_nome" placeholder="Ex: Charcutaria Serra Azul Ltda"/>'+
-      '<label>CNPJ</label><input id="f_cnpj" placeholder="00.000.000/0001-00"/>'+
+      '<label>Razão social / Nome</label><input id="f_nome" placeholder="Ex: Charcutaria Serra Azul"/>'+
+      '<label>CPF ou CNPJ</label><input id="f_doc" placeholder="000.000.000-00 ou 00.000.000/0001-00"/>'+
       '<label>Cidade / UF</label><input id="f_cidade" placeholder="Palmeira/PR"/>'+
       '<label>Nº do Serviço de Inspeção (SIM/POA)</label><input id="f_sim" placeholder="SIM/POA 032"/>'+
+      '<label>E-mail do estabelecimento</label><input id="f_email" type="email" placeholder="contato@estabelecimento.com.br"/>'+
+      '<div class="acesso-bloco">'+
+        '<div class="acesso-titulo">Acesso do estabelecimento <span>(opcional)</span></div>'+
+        '<div class="acesso-desc">Defina um login e senha para o estabelecimento entrar na plataforma. Deixe em branco se quiser criar depois.</div>'+
+        '<label>Login (e-mail de acesso)</label><input id="f_login" type="email" placeholder="usa o e-mail acima, se vazio"/>'+
+        '<label>Senha (mínimo 8 caracteres)</label><input id="f_senha" type="text" placeholder="defina uma senha"/>'+
+      '</div>'+
       '<button class="btn-salvar" id="btnSalvar" onclick="salvarEstab()">CADASTRAR ESTABELECIMENTO</button>'+
       '<div id="formMsg"></div>'+
     '</div>';
@@ -307,27 +318,42 @@ function telaNovoEstab(){
 
 async function salvarEstab(){
   const nome = document.getElementById("f_nome").value.trim();
-  const cnpj = document.getElementById("f_cnpj").value.trim();
+  const doc = document.getElementById("f_doc").value.trim();
   const cidade = document.getElementById("f_cidade").value.trim();
   const sim = document.getElementById("f_sim").value.trim();
+  const email = document.getElementById("f_email").value.trim();
+  const loginRaw = document.getElementById("f_login").value.trim();
+  const senha = document.getElementById("f_senha").value;
+  const login = loginRaw || email; // se login vazio, usa o e-mail do estabelecimento
   const msg = document.getElementById("formMsg");
   const btn = document.getElementById("btnSalvar");
   msg.className=""; msg.textContent="";
   if (!nome){ msg.className="msg-erro"; msg.textContent="Informe o nome do estabelecimento."; return; }
-  if (!cnpj){ msg.className="msg-erro"; msg.textContent="Informe o CNPJ."; return; }
-  btn.disabled=true; btn.textContent="SALVANDO…";
-  const { data, error } = await sb.from("estabelecimento")
-    .insert({ nome:nome, cnpj:cnpj, cidade:cidade||null, sim_poa:sim||null })
-    .select().single();
-  btn.disabled=false; btn.textContent="CADASTRAR ESTABELECIMENTO";
-  if (error){
-    msg.className="msg-erro";
-    msg.textContent = error.message.includes("duplicate") ? "Já existe um estabelecimento com esse CNPJ." : "Erro ao salvar: "+error.message;
-    return;
+  if (!doc){ msg.className="msg-erro"; msg.textContent="Informe o CPF ou CNPJ."; return; }
+  const querLogin = (login.length>0 || senha.length>0);
+  if (querLogin){
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login)){ msg.className="msg-erro"; msg.textContent="Para criar acesso, informe um e-mail de login válido."; return; }
+    if (senha.length<8){ msg.className="msg-erro"; msg.textContent="A senha deve ter no mínimo 8 caracteres."; return; }
   }
-  msg.className="msg-ok";
-  msg.textContent = "✓ "+data.nome+" cadastrado! Redirecionando…";
-  setTimeout(()=>abrir("estabelecimentos"), 1200);
+  btn.disabled=true; btn.textContent="SALVANDO…";
+  try{
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess?.session?.access_token;
+    const resp = await fetch(SUPA_URL+"/functions/v1/cadastrar-estab", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+token, "apikey":SUPA_ANON },
+      body: JSON.stringify({ nome, documento:doc, cidade, sim_poa:sim, email, senha: querLogin?senha:"", login: querLogin?login:"" })
+    });
+    const out = await resp.json();
+    btn.disabled=false; btn.textContent="CADASTRAR ESTABELECIMENTO";
+    if (!resp.ok){ msg.className="msg-erro"; msg.textContent = out.error || "Erro ao cadastrar."; return; }
+    msg.className="msg-ok";
+    msg.textContent = "✓ "+out.estabelecimento.nome+" cadastrado"+(out.login?" com acesso criado":"")+"! Redirecionando…";
+    setTimeout(()=>abrir("estabelecimentos"), 1400);
+  }catch(e){
+    btn.disabled=false; btn.textContent="CADASTRAR ESTABELECIMENTO";
+    msg.className="msg-erro"; msg.textContent="Erro de conexão: "+e.message;
+  }
 }
 
 async function telaChancelas(main){

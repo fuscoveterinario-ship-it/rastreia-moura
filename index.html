@@ -765,7 +765,7 @@ function verQR(codigo, nomeEstab){
   const box = document.getElementById("qrBox");
   box.innerHTML = "";
   document.getElementById("qrEstab").textContent = nomeEstab || "";
-  document.getElementById("qrCod").textContent = codigo + "  ·  " + url;
+  document.getElementById("qrCod").textContent = codigo;
   // gerar QR
   new QRCode(box, { text: url, width: 200, height: 200, colorDark: "#100D0B", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
   // preparar botão baixar (pega o canvas/img gerado)

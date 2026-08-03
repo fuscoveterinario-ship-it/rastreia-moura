@@ -298,7 +298,7 @@ async function telaInicio(main){
 async function telaInicioEstab(main){
   const mes = new Date().toISOString().slice(0,7); // AAAA-MM
   const [car, prods, docs] = await Promise.all([
-    sb.from("carcaca").select("peso_carcaca,saldo_kg,data_entrada,codigo,produtor,animal").eq("estabelecimento_id",meuEstab).order("data_entrada",{ascending:false}),
+    sb.from("carcaca").select("peso_carcaca,saldo_kg,data_entrada,codigo,lote,raca").eq("estabelecimento_id",meuEstab).order("data_entrada",{ascending:false}),
     sb.from("producao").select("id,status,data_fabricacao,ficha_id,ficha_tecnica(produto)").eq("estabelecimento_id",meuEstab).order("data_fabricacao",{ascending:false}),
     sb.from("documento_rt").select("id").eq("estabelecimento_id",meuEstab)
   ]);
@@ -320,7 +320,7 @@ async function telaInicioEstab(main){
   html += '<div class="painel-card"><div class="painel-titulo">Últimas carcaças</div>';
   if (!carc.length) html += '<div class="meta">Nenhuma carcaça registrada.</div>';
   carc.slice(0,3).forEach(c=>{
-    html += '<div class="linha-mini"><div><div class="nome" style="font-size:14px">'+esc(c.codigo)+'</div><div class="meta">'+esc(c.produtor||"—")+(c.animal?' · animal '+esc(c.animal):'')+'</div></div><div class="mono" style="color:var(--cure)">'+Number(c.peso_carcaca).toFixed(1)+' kg</div></div>';
+    html += '<div class="linha-mini"><div><div class="nome" style="font-size:14px">'+esc(c.codigo)+'</div><div class="meta">'+(c.lote?'lote '+esc(c.lote):(c.raca||"—"))+'</div></div><div class="mono" style="color:var(--cure)">'+Number(c.peso_carcaca).toFixed(1)+' kg</div></div>';
   });
   html += '</div>';
   html += '<div class="painel-card"><div class="painel-titulo">Últimas produções</div>';
@@ -537,8 +537,8 @@ async function telaCarcacas(main){
   data.forEach(c=>{
     const usado = Number(c.peso_carcaca)-Number(c.saldo_kg);
     html += '<div class="item"><div><div class="nome">'+esc(c.codigo)+'  ·  '+Number(c.peso_carcaca).toFixed(1)+' kg</div>'+
-      '<div class="meta">'+esc(c.produtor||"—")+(c.municipio?' · '+esc(c.municipio):'')+(c.animal?' · animal '+esc(c.animal):'')+' · entrada '+fmt(c.data_entrada)+
-      (c.gta?' · GTA '+esc(c.gta):'')+'</div></div>'+
+      '<div class="meta">'+(c.lote?'lote '+esc(c.lote):'—')+(c.tatuagem?' · tat. '+esc(c.tatuagem):'')+(c.raca?' · '+esc(c.raca):'')+' · entrada '+fmt(c.data_entrada)+
+      (c.frigorifico?' · '+esc(c.frigorifico):'')+(c.bem_estar?' · BEA '+esc(c.bem_estar):'')+'</div></div>'+
       '<div style="text-align:right"><div class="mono" style="color:var(--moss);font-size:15px">'+Number(c.saldo_kg).toFixed(1)+' kg</div><div class="meta" style="font-size:11px">disponível'+(usado>0?' · usou '+usado.toFixed(1):'')+'</div></div></div>';
   });
   main.innerHTML = html;
@@ -549,13 +549,22 @@ function telaNovaCarcaca(){
     '<div class="eyebrow">Recebimento</div><h2>Nova carcaça</h2>'+
     '<div class="form-card">'+
       '<label>Peso da carcaça (kg) *</label><input id="c_peso" type="number" step="0.01" placeholder="42.50"/>'+
-      '<label>Produtor / origem</label><input id="c_produtor" placeholder="Sítio Boa Vista"/>'+
-      '<label>Município de origem</label><input id="c_municipio" placeholder="Palmeira/PR"/>'+
-      '<label>Identificação do animal</label><input id="c_animal" placeholder="005"/>'+
-      '<label>Raça</label><input id="c_raca" value="Moura"/>'+
-      '<label>Nº da GTA</label><input id="c_gta" placeholder="GTA 000000"/>'+
-      '<label>Abatedouro</label><input id="c_abatedouro" placeholder="Frigorífico ..."/>'+
-      '<label>Peso vivo (kg)</label><input id="c_pesovivo" type="number" step="0.01" placeholder="opcional"/>'+
+      '<label>Lote</label><input id="c_lote" placeholder="L-'+new Date().getFullYear()+'-001"/>'+
+      '<label>Tatuagem</label><input id="c_tatuagem" placeholder="nº da tatuagem do animal"/>'+
+      '<label>Raça</label><select class="status-sel" id="c_raca" style="width:100%;padding:12px 14px;font-size:14px">'+
+        '<option value="Moura">Moura</option>'+
+        '<option value="Large White">Large White</option>'+
+        '<option value="Landrace">Landrace</option>'+
+        '<option value="Duroc">Duroc</option>'+
+      '</select>'+
+      '<label>Data de nascimento</label><input id="c_nascimento" type="date"/>'+
+      '<label>Confinamento</label><select class="status-sel" id="c_confinamento" style="width:100%;padding:12px 14px;font-size:14px">'+
+        '<option value="">— selecione —</option><option value="sim">Sim</option><option value="nao">Não</option></select>'+
+      '<label>Promotor de crescimento</label><select class="status-sel" id="c_promotor" style="width:100%;padding:12px 14px;font-size:14px">'+
+        '<option value="">— selecione —</option><option value="sim">Sim</option><option value="nao">Não</option></select>'+
+      '<label>Grau de Bem-Estar Animal</label><select class="status-sel" id="c_bemestar" style="width:100%;padding:12px 14px;font-size:14px">'+
+        '<option value="">— selecione —</option><option value="A">A (excelente)</option><option value="B">B (bom)</option><option value="C">C (regular)</option><option value="D">D (mínimo)</option></select>'+
+      '<label>Frigorífico</label><input id="c_frigorifico" placeholder="Frigorífico ..."/>'+
       '<label>Data de entrada</label><input id="c_data" type="date"/>'+
       '<button class="btn-salvar" id="btnC" onclick="salvarCarcaca()">REGISTRAR CARCAÇA</button>'+
       '<div id="cMsg"></div></div>';
@@ -568,18 +577,21 @@ async function salvarCarcaca(){
   if (!peso || peso<=0){ msg.className="msg-erro"; msg.textContent="Informe um peso de carcaça válido."; return; }
   btn.disabled=true; btn.textContent="SALVANDO…";
   const ano = new Date().getFullYear(); const mm = String(new Date().getMonth()+1).padStart(2,"0");
+  const conf = document.getElementById("c_confinamento").value;
+  const prom = document.getElementById("c_promotor").value;
   const rec = {
     estabelecimento_id: meuEstab,
     codigo: 'CAR-'+ano+mm+'-TEMP',
     peso_carcaca: peso,
-    saldo_kg: peso, // trigger init também garante
-    produtor: document.getElementById("c_produtor").value.trim()||null,
-    municipio: document.getElementById("c_municipio").value.trim()||null,
-    animal: document.getElementById("c_animal").value.trim()||null,
-    raca: document.getElementById("c_raca").value.trim()||"Moura",
-    gta: document.getElementById("c_gta").value.trim()||null,
-    abatedouro: document.getElementById("c_abatedouro").value.trim()||null,
-    peso_vivo: parseFloat(document.getElementById("c_pesovivo").value)||null,
+    saldo_kg: peso,
+    lote: document.getElementById("c_lote").value.trim()||null,
+    tatuagem: document.getElementById("c_tatuagem").value.trim()||null,
+    raca: document.getElementById("c_raca").value||"Moura",
+    data_nascimento: document.getElementById("c_nascimento").value||null,
+    confinamento: conf==="sim"?true:(conf==="nao"?false:null),
+    promotor_crescimento: prom==="sim"?true:(prom==="nao"?false:null),
+    bem_estar: document.getElementById("c_bemestar").value||null,
+    frigorifico: document.getElementById("c_frigorifico").value.trim()||null,
     data_entrada: document.getElementById("c_data").value||new Date().toISOString().slice(0,10)
   };
   const { error } = await sb.from("carcaca").insert(rec);
@@ -600,7 +612,7 @@ async function telaEstoque(main){
   if (!data.length) html += '<div class="vazio">Sem saldo em estoque. Registre uma carcaça primeiro.</div>';
   data.forEach(c=>{
     const pct = (Number(c.saldo_kg)/Number(c.peso_carcaca)*100).toFixed(0);
-    html += '<div class="item moss"><div><div class="nome">'+esc(c.codigo)+'</div><div class="meta">'+esc(c.produtor||"—")+' · entrada '+fmt(c.data_entrada)+' · original '+Number(c.peso_carcaca).toFixed(1)+' kg</div></div>'+
+    html += '<div class="item moss"><div><div class="nome">'+esc(c.codigo)+'</div><div class="meta">'+(c.lote?'lote '+esc(c.lote):(c.raca||"—"))+' · entrada '+fmt(c.data_entrada)+' · original '+Number(c.peso_carcaca).toFixed(1)+' kg</div></div>'+
       '<div style="text-align:right"><div class="mono" style="color:var(--moss);font-size:16px">'+Number(c.saldo_kg).toFixed(1)+' kg</div><div class="meta" style="font-size:11px">'+pct+'% restante</div></div></div>';
   });
   main.innerHTML = html;
@@ -679,7 +691,7 @@ async function telaNovaProducao(){
   main.innerHTML = '<div class="loading">Carregando fichas e estoque…</div>';
   const [fichas, carcacas] = await Promise.all([
     sb.from("ficha_tecnica").select("id,produto").eq("estabelecimento_id",meuEstab).eq("ativo",true).order("produto"),
-    sb.from("carcaca").select("id,codigo,saldo_kg,produtor").eq("estabelecimento_id",meuEstab).gt("saldo_kg",0).order("data_entrada")
+    sb.from("carcaca").select("id,codigo,saldo_kg,lote").eq("estabelecimento_id",meuEstab).gt("saldo_kg",0).order("data_entrada")
   ]);
   const fs = fichas.data||[]; const cs = carcacas.data||[];
   if (!fs.length){ main.innerHTML='<button class="btn-link" onclick="abrir(\'producao\')">← Voltar</button><div class="vazio">Cadastre uma ficha técnica antes de produzir.</div>'; return; }

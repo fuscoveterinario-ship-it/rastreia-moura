@@ -22,10 +22,13 @@ body{background:#100D0B;color:#F2E6CE;font-family:system-ui,sans-serif;min-heigh
 .dot{width:12px;height:12px;border-radius:50%;background:#E0C067}
 .produtos{margin-top:26px;padding-top:22px;border-top:1px solid #2E2620}
 .produtos-titulo{font-family:'DM Mono',monospace;font-size:11px;color:#C9A34E;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px}
-.produto{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px dotted #2E2620;text-align:left}
+.produto{display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 0;border-bottom:1px dotted #2E2620;text-align:center}
 .produto:last-child{border-bottom:none}
 .produto-dot{width:7px;height:7px;border-radius:50%;background:#C9A34E;flex-shrink:0}
-.produto-nome{font-size:14px;font-weight:500}.produto-tipo{font-size:12px;color:#9A8B72;font-family:'DM Mono',monospace;margin-left:auto}
+.produto-nome{font-size:15px;font-weight:600;color:#F2E6CE}
+.bemestar{margin-top:22px;padding-top:20px;border-top:1px solid #2E2620;display:flex;flex-direction:column;align-items:center;gap:8px}
+.bemestar-label{font-family:'DM Mono',monospace;font-size:11px;color:#C9A34E;text-transform:uppercase;letter-spacing:1.5px}
+.bemestar-grau{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:50%;border:2px solid #C9A34E;background:rgba(201,163,78,.12);color:#E0C067;font-family:'Playfair Display',serif;font-weight:800;font-size:24px}
 .chancela{font-family:'DM Mono',monospace;font-size:13px;color:#9A8B72;margin-top:20px}
 .verificado{font-size:11px;color:#9A8B72;margin-top:8px}
 .rodape{font-family:'DM Mono',monospace;font-size:10.5px;color:#6B6357;margin-top:24px;line-height:1.6}
@@ -65,7 +68,7 @@ async function init(){
   let prods="";
   if(Array.isArray(data.produtos)&&data.produtos.length){
     prods='<div class="produtos"><div class="produtos-titulo">Produtos certificados</div>'+
-      data.produtos.map(p=>'<div class="produto"><span class="produto-dot"></span><span class="produto-nome">'+esc(p.nome)+'</span><span class="produto-tipo">'+esc(p.tipo||"")+'</span></div>').join("")+
+      data.produtos.map(p=>'<div class="produto"><span class="produto-nome">'+esc(p.nome)+'</span></div>').join("")+
       '</div>';
   }
   card.innerHTML='<div class="selo-wrap"><img src="'+seloUsado+'" alt="Selo"/><div class="selo-num">'+esc(String(data.numero))+'</div></div>'+
@@ -74,6 +77,7 @@ async function init(){
     '<div class="local">'+esc(data.cidade||"")+'</div>'+
     '<div class="status ativa"><span class="dot"></span>Chancela ativa</div>'+
     prods+
+    (data.bem_estar ? '<div class="bemestar"><span class="bemestar-label">Grau de bem-estar animal</span><span class="bemestar-grau">'+esc(data.bem_estar)+'</span></div>' : '')+
     '<div class="chancela">Chancela '+esc(data.codigo)+'</div>'+
     '<div class="verificado">Verificado em tempo real</div></div>'+
     '<div class="rodape">Rastreabilidade e certificação de origem<br/>Emitido pela BIOTEC Consultoria</div>';

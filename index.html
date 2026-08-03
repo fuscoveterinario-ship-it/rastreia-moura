@@ -119,6 +119,8 @@
   .carc-linha{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dotted var(--line)}
   .carc-linha:last-child{border-bottom:none}
   @media(max-width:640px){.grid-resumo{grid-template-columns:1fr !important}}
+  .nota-chancela{background:rgba(201,163,78,.08);border:1px solid var(--line);border-left:3px solid var(--cure);border-radius:6px;padding:12px 14px;margin-bottom:18px;font-size:12.5px;color:var(--inkSoft);line-height:1.5;max-width:560px}
+  .nota-chancela b{color:var(--cure)}
 </style></head>
 <body>
 
@@ -361,6 +363,7 @@ function telaNovoEstab(){
   main.innerHTML =
     '<button class="btn-link" onclick="abrir(\'estabelecimentos\')">← Voltar aos estabelecimentos</button>'+
     '<div class="eyebrow">Novo cliente</div><h2>Cadastrar estabelecimento</h2>'+
+    '<div class="nota-chancela">Ao cadastrar, a chancela é emitida automaticamente em <b>Em processo</b>. Depois da auditoria, mude para <b>Ativa</b> na aba Chancelas — aí o QR Code fica público.</div>'+
     '<div class="form-card">'+
       '<label>Razão social / Nome</label><input id="f_nome" placeholder="Ex: Charcutaria Serra Azul"/>'+
       '<label>CPF ou CNPJ</label><input id="f_doc" placeholder="000.000.000-00 ou 00.000.000/0001-00"/>'+
@@ -410,7 +413,7 @@ async function salvarEstab(){
     btn.disabled=false; btn.textContent="CADASTRAR ESTABELECIMENTO";
     if (!resp.ok){ msg.className="msg-erro"; msg.textContent = out.error || "Erro ao cadastrar."; return; }
     msg.className="msg-ok";
-    msg.textContent = "✓ "+out.estabelecimento.nome+" cadastrado"+(out.login?" com acesso criado":"")+"! Redirecionando…";
+    msg.textContent = "✓ "+out.estabelecimento.nome+" cadastrado"+(out.login?" com acesso":"")+(out.chancela&&out.chancela.codigo?" · chancela "+out.chancela.codigo+" (em processo)":"")+"! Redirecionando…";
     setTimeout(()=>abrir("estabelecimentos"), 1400);
   }catch(e){
     btn.disabled=false; btn.textContent="CADASTRAR ESTABELECIMENTO";
